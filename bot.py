@@ -119,6 +119,11 @@ class PageSpeedBot:
             logger.debug(f"PDF generated, size: {pdf_bytes.getbuffer().nbytes} bytes")
             pdf_bytes.seek(0)
             
+            # Збереження PDF локально для тесту
+            with open("debug_report.pdf", "wb") as f:
+                f.write(pdf_bytes.read())
+            pdf_bytes.seek(0)
+            
             # Підготовка назви файлу
             filename = generate_filename(url)
             logger.debug(f"Sending PDF to user with filename: {filename}")
