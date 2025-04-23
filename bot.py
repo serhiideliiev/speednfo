@@ -110,6 +110,7 @@ class PageSpeedBot:
             
             # Створення PDF зі звітом
             pdf_bytes = self.pdf_generator.generate_report(url, mobile_results, desktop_results)
+            pdf_bytes.seek(0)
             
             # Підготовка назви файлу
             filename = generate_filename(url)
@@ -122,8 +123,7 @@ class PageSpeedBot:
                     url=url,
                     mobile_score=mobile_results['score'],
                     desktop_score=desktop_results['score']
-                ),
-                mime_type='application/pdf'
+                )
             )
             
             # Видалення статусного повідомлення
