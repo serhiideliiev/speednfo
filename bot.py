@@ -79,6 +79,7 @@ class PageSpeedBot:
     async def analyze_url(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обробник повідомлень з URL."""
         url = update.message.text.strip()
+        logger.debug(f"Received URL for analysis: {url}")
         
         # Перевірка правильності URL
         if not is_valid_url(url):
@@ -89,16 +90,20 @@ class PageSpeedBot:
         status_message = await update.message.reply_text(BOT_MESSAGES["analysis_start"])
         
         try:
+            logger.debug("Starting mobile analysis...")
             # Аналіз для мобільної версії
             mobile_results = self.analyzer.analyze(url, "mobile")
+            logger.debug(f"Mobile analysis results: {mobile_results}")
             if "error" in mobile_results:
                 await status_message.edit_text(
                     BOT_MESSAGES["error"].format(error=mobile_results["error"])
                 )
                 return
                 
+            logger.debug("Starting desktop analysis...")
             # Аналіз для десктопної версії
             desktop_results = self.analyzer.analyze(url, "desktop")
+            logger.debug(f"Desktop analysis results: {desktop_results}")
             if "error" in desktop_results:
                 await status_message.edit_text(
                     BOT_MESSAGES["error"].format(error=desktop_results["error"])
@@ -108,12 +113,15 @@ class PageSpeedBot:
             # Оновлення статусу
             await status_message.edit_text(BOT_MESSAGES["analysis_complete"])
             
+            logger.debug("Generating PDF report...")
             # Створення PDF зі звітом
             pdf_bytes = self.pdf_generator.generate_report(url, mobile_results, desktop_results)
+            logger.debug(f"PDF generated, size: {pdf_bytes.getbuffer().nbytes} bytes")
             pdf_bytes.seek(0)
             
             # Підготовка назви файлу
             filename = generate_filename(url)
+            logger.debug(f"Sending PDF to user with filename: {filename}")
             
             # Відправка PDF файлу
             await update.message.reply_document(
@@ -125,6 +133,7 @@ class PageSpeedBot:
                     desktop_score=desktop_results['score']
                 )
             )
+            logger.debug("PDF sent to user successfully.")
             
             # Видалення статусного повідомлення
             await status_message.delete()
