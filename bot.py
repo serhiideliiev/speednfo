@@ -122,7 +122,8 @@ class PageSpeedBot:
                     url=url,
                     mobile_score=mobile_results['score'],
                     desktop_score=desktop_results['score']
-                )
+                ),
+                mime_type='application/pdf'
             )
             
             # Видалення статусного повідомлення
