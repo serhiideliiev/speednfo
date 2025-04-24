@@ -15,7 +15,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import cm
-from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.shapes import Drawing, String
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.graphics.charts.legends import Legend
 
@@ -39,10 +39,17 @@ class PDFReportGenerator:
         self.font_path = font_path or FONT_PATH
         self._register_fonts()
         self._init_styles()
+        self._init_colors()
     
     def _register_fonts(self):
         """Реєструє українські шрифти для використання в PDF."""
         self.use_ukrainian_font = False
+        
+        # Реєстрація стандартного шрифту як запасного варіанту
+        try:
+            pdfmetrics.registerFont(TTFont("DefaultFont", "Helvetica"))
+        except Exception:
+            pass
         
         if self.font_path:
             try:
@@ -79,6 +86,14 @@ class PDFReportGenerator:
             spaceAfter=10
         )
         
+        self.subheading_style = ParagraphStyle(
+            "UkrainianSubheading",
+            parent=self.styles["Heading2"],
+            fontName=font_name,
+            fontSize=14,
+            spaceAfter=8
+        )
+        
         self.normal_style = ParagraphStyle(
             "UkrainianNormal",
             parent=self.styles["Normal"],
@@ -86,6 +101,34 @@ class PDFReportGenerator:
             fontSize=12,
             spaceAfter=6
         )
+        
+        self.small_style = ParagraphStyle(
+            "UkrainianSmall",
+            parent=self.styles["Normal"],
+            fontName=font_name,
+            fontSize=10,
+            spaceAfter=4
+        )
+    
+    def _init_colors(self):
+        """Ініціалізує кольори для використання в звіті."""
+        # Кольори для заголовків
+        self.header_bg_color = colors.HexColor("#1a365d")  # Темно-синій
+        self.header_text_color = colors.white
+        
+        # Кольори для рейтингів
+        self.good_bg_color = colors.HexColor("#d4edda")  # Світло-зелений
+        self.good_text_color = colors.HexColor("#155724")  # Темно-зелений
+        
+        self.average_bg_color = colors.HexColor("#fff3cd")  # Світло-жовтий
+        self.average_text_color = colors.HexColor("#856404")  # Темно-жовтий
+        
+        self.poor_bg_color = colors.HexColor("#f8d7da")  # Світло-червоний
+        self.poor_text_color = colors.HexColor("#721c24")  # Темно-червоний
+        
+        # Кольори для діаграми
+        self.mobile_color = colors.HexColor("#3182ce")  # Синій для мобільного
+        self.desktop_color = colors.HexColor("#38a169")  # Зелений для десктопу
     
     def generate_report(self, url, mobile_results, desktop_results):
         """
@@ -123,6 +166,9 @@ class PDFReportGenerator:
         # Додавання оцінок продуктивності
         self._add_performance_scores(elements, mobile_results, desktop_results, doc.width)
         
+        # Додавання візуальної діаграми порівняння продуктивності
+        self._add_performance_chart(elements, mobile_results, desktop_results, doc.width)
+        
         # Додавання детальних метрик для мобільної версії
         if mobile_results and "metrics" in mobile_results:
             self._add_metrics_section(
@@ -140,9 +186,6 @@ class PDFReportGenerator:
                 desktop_results["metrics"],
                 doc.width
             )
-
-        # Додавання графіка порівняння продуктивності
-        self._add_performance_chart(elements, mobile_results, desktop_results, doc.width)
         
         # Додавання рекомендацій
         if mobile_results and desktop_results:
@@ -190,6 +233,7 @@ class PDFReportGenerator:
             width (float): Ширина документа
         """
         elements.append(Paragraph("Загальні оцінки продуктивності", self.heading_style))
+        elements.append(Spacer(1, 0.3*cm))
         
         # Отримання оцінок з результатів, з перевіркою на наявність даних
         mobile_score = mobile_results.get("score", 0) if mobile_results else 0
@@ -207,81 +251,129 @@ class PDFReportGenerator:
         
         # Визначення стилю таблиці
         font_name = "Ukrainian" if self.use_ukrainian_font else "Helvetica"
-        table_style = TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), font_name),
-            ("FONTNAME", (0, 1), (-1, -1), font_name),
+        
+        # Базові стилі таблиці
+        table_style = [
+            ("BACKGROUND", (0, 0), (-1, 0), self.header_bg_color),
+            ("TEXTCOLOR", (0, 0), (-1, 0), self.header_text_color),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("ALIGN", (0, 1), (-1, -1), "CENTER"),
+            ("FONTNAME", (0, 0), (-1, -1), font_name),
             ("FONTSIZE", (0, 0), (-1, 0), 14),
             ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+            ("TOPPADDING", (0, 0), (-1, 0), 8),
             ("GRID", (0, 0), (-1, -1), 1, colors.black)
-        ])
+        ]
         
-        table.setStyle(table_style)
+        # Додавання кольорового кодування оцінок
+        for i, row in enumerate(data[1:], 1):
+            score = int(row[1].split("/")[0])
+            if score >= 90:
+                bg_color = self.good_bg_color
+                text_color = self.good_text_color
+            elif score >= 50:
+                bg_color = self.average_bg_color
+                text_color = self.average_text_color
+            else:
+                bg_color = self.poor_bg_color
+                text_color = self.poor_text_color
+                
+            table_style.append(("BACKGROUND", (1, i), (2, i), bg_color))
+            table_style.append(("TEXTCOLOR", (1, i), (2, i), text_color))
+        
+        table.setStyle(TableStyle(table_style))
         elements.append(table)
         elements.append(Spacer(1, 1*cm))
 
     def _add_performance_chart(self, elements, mobile_results, desktop_results, width):
         """
-        Adds a visual chart comparing performance metrics.
-        """
-        # Create a proper drawing with defined dimensions
-        drawing = Drawing(width, 250)  # Increase height for better visibility
+        Додає візуальну діаграму порівняння продуктивності.
         
-        # Create the bar chart
+        Args:
+            elements (list): Список елементів PDF
+            mobile_results (dict): Результати для мобільних пристроїв
+            desktop_results (dict): Результати для десктопу
+            width (float): Ширина документа
+        """
+        elements.append(Paragraph("Порівняння продуктивності", self.heading_style))
+        elements.append(Spacer(1, 0.5*cm))
+        
+        # Отримання оцінок з результатів, з перевіркою на наявність даних
+        mobile_score = mobile_results.get("score", 0) if mobile_results else 0
+        desktop_score = desktop_results.get("score", 0) if desktop_results else 0
+        
+        # Створення базової діаграми з більшою висотою
+        drawing = Drawing(width, 250)
+        
+        # Створення та налаштування вертикальної діаграми
         chart = VerticalBarChart()
         chart.x = 50
         chart.y = 50
-        chart.height = 150  # Increase height
-        chart.width = width - 120  # Adjust width to leave room for labels
+        chart.height = 150
+        chart.width = width - 110
         
-        # Set up data - make sure we're handling potential None values
-        mobile_score = mobile_results.get('score', 0) if mobile_results else 0
-        desktop_score = desktop_results.get('score', 0) if desktop_results else 0
-        data = [[mobile_score], [desktop_score]]
-        chart.data = data
+        # Дані для діаграми
+        chart.data = [[mobile_score], [desktop_score]]
         
-        # Improve visual appearance with better colors and spacing
-        chart.bars[0].fillColor = colors.blue
-        chart.bars[1].fillColor = colors.green
+        # Кольори стовпців
+        chart.bars[0].fillColor = self.mobile_color
+        chart.bars[1].fillColor = self.desktop_color
+        
+        # Налаштування осі значень (Y)
         chart.valueAxis.valueMin = 0
         chart.valueAxis.valueMax = 100
-        chart.valueAxis.valueStep = 20  # Use fewer steps for cleaner look
-        
-        # Add proper labels
-        chart.categoryAxis.labels.boxAnchor = 'n'
-        chart.categoryAxis.labels.dy = -10
-        chart.categoryAxis.categoryNames = ['Показники продуктивності']
-        
-        # Add axis labels
-        # Determine font name based on availability
-        font_name = "Ukrainian" if self.use_ukrainian_font else "Helvetica"
-        # Set angle and font for value axis labels directly
-        chart.valueAxis.labels.angle = 90
-        chart.valueAxis.labels.fontName = font_name
+        chart.valueAxis.valueStep = 20
         chart.valueAxis.labels.fontSize = 10
+        chart.valueAxis.labels.fontName = "Helvetica"
+        chart.valueAxis.strokeWidth = 1
+        chart.valueAxis.gridStrokeWidth = 0.5
+        chart.valueAxis.visibleGrid = True
         
-        # Add a clear legend with better positioning
+        # Налаштування осі категорій (X)
+        chart.categoryAxis.labels.boxAnchor = "n"
+        chart.categoryAxis.labels.dx = 0
+        chart.categoryAxis.labels.dy = -10
+        chart.categoryAxis.labels.fontName = "Helvetica"
+        chart.categoryAxis.labels.fontSize = 10
+        chart.categoryAxis.categoryNames = [""]
+        
+        # Додавання підпису для осі Y
+        y_label = String(15, 125, "Оцінка", fontSize=10, fontName="Helvetica")
+        y_label.textAnchor = "middle"
+        y_label.angle = 90
+        drawing.add(y_label)
+        
+        # Додавання легенди
         legend = Legend()
-        legend.alignment = 'right'
         legend.x = width - 100
-        legend.y = 180
-        legend.fontName = font_name
+        legend.y = 160
+        legend.colorNamePairs = [
+            (self.mobile_color, "Мобільний"), 
+            (self.desktop_color, "Десктоп")
+        ]
+        legend.fontName = "Helvetica"
+        legend.fontSize = 10
+        legend.alignment = "right"
         legend.columnMaximum = 1
-        legend.colorNamePairs = [(colors.blue, 'Мобільний'), (colors.green, 'Десктоп')]
+        legend.strokeWidth = 0
         
+        # Додавання елементів до діаграми
         drawing.add(chart)
         drawing.add(legend)
         
-        elements.append(Paragraph("Порівняння продуктивності", self.heading_style))
+        # Додавання діаграми до документа
         elements.append(drawing)
-        elements.append(Spacer(1, 0.7*cm))  # Increase spacing after chart
+        elements.append(Spacer(1, 0.8*cm))
 
     def _add_metrics_section(self, elements, title, metrics, width):
         """
-        Adds a section with detailed metrics including color coding for ratings.
+        Додає секцію з детальними метриками з кольоровим кодуванням.
+        
+        Args:
+            elements (list): Список елементів PDF
+            title (str): Заголовок секції
+            metrics (dict): Метрики для відображення
+            width (float): Ширина документа
         """
         if not metrics:
             logger.warning(f"Немає метрик для секції: {title}")
@@ -290,7 +382,7 @@ class PDFReportGenerator:
         elements.append(Paragraph(title, self.heading_style))
         elements.append(Spacer(1, 0.3*cm))
         
-        # Prepare table data
+        # Підготовка даних для таблиці
         metrics_data = [["Метрика", "Значення", "Оцінка"]]
         
         for metric_name, metric_data in metrics.items():
@@ -300,86 +392,54 @@ class PDFReportGenerator:
                 metric_data.get("rating", "N/A")
             ])
         
-        # Create table with metrics
+        # Створення таблиці з метриками
         font_name = "Ukrainian" if self.use_ukrainian_font else "Helvetica"
         metrics_table = Table(metrics_data, colWidths=[width*0.5, width*0.25, width*0.25])
         
-        # Base styles
+        # Базові стилі таблиці
         table_style = [
-            ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-            ("FONTNAME", (0, 0), (-1, 0), font_name),
-            ("FONTNAME", (0, 1), (-1, -1), font_name),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ("BACKGROUND", (0, 0), (-1, 0), self.header_bg_color),
+            ("TEXTCOLOR", (0, 0), (-1, 0), self.header_text_color),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("ALIGN", (0, 1), (-1, -1), "LEFT"),
+            ("FONTNAME", (0, 0), (-1, -1), font_name),
+            ("FONTSIZE", (0, 0), (-1, 0), 12),
             ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
             ("TOPPADDING", (0, 0), (-1, 0), 8),
+            ("GRID", (0, 0), (-1, -1), 1, colors.black),
         ]
         
-        # Add color coding for ratings
+        # Додавання кольорового кодування для оцінок
         for i, row in enumerate(metrics_data[1:], 1):
-            rating = row[2]
+            rating = row[2].lower()
             if rating == "good":
-                table_style.append(("BACKGROUND", (2, i), (2, i), colors.lightgreen))
-                table_style.append(("TEXTCOLOR", (2, i), (2, i), colors.darkgreen))
+                bg_color = self.good_bg_color
+                text_color = self.good_text_color
             elif rating == "average":
-                table_style.append(("BACKGROUND", (2, i), (2, i), colors.lightyellow))
-                table_style.append(("TEXTCOLOR", (2, i), (2, i), colors.brown))
-            elif rating == "poor":
-                table_style.append(("BACKGROUND", (2, i), (2, i), colors.mistyrose))
-                table_style.append(("TEXTCOLOR", (2, i), (2, i), colors.darkred))
+                bg_color = self.average_bg_color
+                text_color = self.average_text_color
+            else:  # poor or other
+                bg_color = self.poor_bg_color
+                text_color = self.poor_text_color
+                
+            table_style.append(("BACKGROUND", (2, i), (2, i), bg_color))
+            table_style.append(("TEXTCOLOR", (2, i), (2, i), text_color))
         
         metrics_table.setStyle(TableStyle(table_style))
         elements.append(metrics_table)
         elements.append(Spacer(1, 0.7*cm))
-
-    def _add_metrics_heatmap(self, elements, metrics, width):
-        """
-        Додає теплову карту для метрик.
-        
-        Args:
-            elements (list): Список елементів PDF
-            metrics (dict): Метрики для відображення
-            width (float): Ширина документа
-        """
-        if not metrics:
-            return
-            
-        data = [["Метрика", "Значення", "Статус"]]
-        
-        for name, metric_data in metrics.items():
-            rating = metric_data.get("rating", "N/A")
-            data.append([name, metric_data.get("value", "N/A"), rating])
-        
-        font_name = "Ukrainian" if self.use_ukrainian_font else "Helvetica"
-        table = Table(data, colWidths=[width*0.5, width*0.25, width*0.25])
-        
-        # Базові стилі
-        style = [
-            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-            ("FONTNAME", (0, 0), (-1, -1), font_name),
-            ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ]
-        
-        # Додаємо кольори для кожного рядка на основі рейтингу
-        for i, row in enumerate(data[1:], 1):
-            rating = row[2]
-            color = colors.lightgreen if rating == "good" else \
-                    colors.lightyellow if rating == "average" else colors.lightcoral
-            style.append(("BACKGROUND", (2, i), (2, i), color))
-        
-        table.setStyle(TableStyle(style))
-        elements.append(table)
-        elements.append(Spacer(1, 0.5*cm))
     
     def _add_recommendations_section(self, elements, mobile_recs, desktop_recs):
         """
-        Adds a section with optimization recommendations with categorization.
+        Додає секцію з категоризованими та пріоритизованими рекомендаціями.
+        
+        Args:
+            elements (list): Список елементів PDF
+            mobile_recs (list): Рекомендації для мобільних пристроїв
+            desktop_recs (list): Рекомендації для десктопу
         """
-        all_recommendations = set(mobile_recs + desktop_recs)
+        # Об'єднуємо унікальні рекомендації з обох аналізів
+        all_recommendations = list(set(mobile_recs + desktop_recs))
         
         if not all_recommendations:
             return
@@ -387,84 +447,91 @@ class PDFReportGenerator:
         elements.append(Paragraph("Рекомендації щодо оптимізації", self.heading_style))
         elements.append(Spacer(1, 0.3*cm))
         
-        # Add a subheading explaining recommendations
+        # Додаємо короткий опис
         elements.append(Paragraph(
             "Нижче наведені рекомендації для покращення продуктивності сайту. "
-            "Виконання цих рекомендацій може значно підвищити швидкість завантаження.", 
+            "Виконання цих рекомендацій може значно підвищити швидкість завантаження.",
             self.normal_style
         ))
         elements.append(Spacer(1, 0.5*cm))
         
-        # Categorize recommendations (simple approach)
-        performance_recs = []
-        image_recs = []
-        code_recs = []
+        # Ключові слова для визначення категорій та пріоритетів
+        high_priority_keywords = [
+            'великого контенту', 'LCP', 'FCP', 'Time to Interactive', 
+            'блокують відображення', 'First Contentful Paint', 
+            'Largest Contentful Paint', 'критично'
+        ]
+        
+        # Категоризація та пріоритизація рекомендацій
+        image_recs_high = []
+        image_recs_normal = []
+        code_recs_high = []
+        code_recs_normal = []
+        perf_recs_high = []
+        perf_recs_normal = []
         other_recs = []
         
         for rec in all_recommendations:
-            if any(kw in rec.lower() for kw in ['зображення', 'картинки', 'формат']):
-                image_recs.append(rec)
-            elif any(kw in rec.lower() for kw in ['css', 'javascript', 'js', 'код']):
-                code_recs.append(rec)
-            elif any(kw in rec.lower() for kw in ['швидкість', 'кеш', 'час', 'завантаження']):
-                performance_recs.append(rec)
+            rec_lower = rec.lower()
+            is_high_priority = any(kw.lower() in rec_lower for kw in high_priority_keywords)
+            
+            if any(kw in rec_lower for kw in ['зображен', 'картин', 'формат', 'picture']):
+                if is_high_priority:
+                    image_recs_high.append(rec)
+                else:
+                    image_recs_normal.append(rec)
+            elif any(kw in rec_lower for kw in ['css', 'javascript', 'js', 'код', 'script']):
+                if is_high_priority:
+                    code_recs_high.append(rec)
+                else:
+                    code_recs_normal.append(rec)
+            elif any(kw in rec_lower for kw in ['швидкість', 'кеш', 'час', 'завантаження']):
+                if is_high_priority:
+                    perf_recs_high.append(rec)
+                else:
+                    perf_recs_normal.append(rec)
             else:
                 other_recs.append(rec)
         
-        # Add categorized recommendations
-        if image_recs:
-            elements.append(Paragraph("Оптимізація зображень:", self.heading_style))
-            for rec in image_recs:
-                elements.append(Paragraph(f"• {rec}", self.normal_style))
-            elements.append(Spacer(1, 0.3*cm))
+        # Додавання рекомендацій по категоріях
+        self._add_recommendation_category(elements, "Оптимізація зображень:", image_recs_high, image_recs_normal)
+        self._add_recommendation_category(elements, "Оптимізація коду:", code_recs_high, code_recs_normal)
+        self._add_recommendation_category(elements, "Загальна продуктивність:", perf_recs_high, perf_recs_normal)
         
-        if code_recs:
-            elements.append(Paragraph("Оптимізація коду:", self.heading_style))
-            for rec in code_recs:
-                elements.append(Paragraph(f"• {rec}", self.normal_style))
-            elements.append(Spacer(1, 0.3*cm))
-        
-        if performance_recs:
-            elements.append(Paragraph("Загальна продуктивність:", self.heading_style))
-            for rec in performance_recs:
-                elements.append(Paragraph(f"• {rec}", self.normal_style))
-            elements.append(Spacer(1, 0.3*cm))
-        
+        # Додавання інших рекомендацій
         if other_recs:
-            elements.append(Paragraph("Інші рекомендації:", self.heading_style))
+            elements.append(Paragraph("Інші рекомендації:", self.subheading_style))
             for rec in other_recs:
                 elements.append(Paragraph(f"• {rec}", self.normal_style))
-
-    def _add_recommendations_with_priority(self, elements, recommendations, priorities=None):
+                
+        # Додавання пояснення пріоритетів
+        elements.append(Spacer(1, 0.7*cm))
+        elements.append(Paragraph("Пріоритети рекомендацій:", self.subheading_style))
+        elements.append(Paragraph("🔴 Високий пріоритет - критичні проблеми, що значно впливають на швидкість", self.small_style))
+        elements.append(Paragraph("🟠 Середній пріоритет - важливі оптимізації з помірним впливом", self.small_style))
+        elements.append(Paragraph("• Низький пріоритет - незначні покращення", self.small_style))
+    
+    def _add_recommendation_category(self, elements, title, high_priority_items, normal_priority_items):
         """
-        Adds recommendations with priority indicators.
+        Додає категорію рекомендацій з відповідними пріоритетами.
+        
+        Args:
+            elements (list): Список елементів PDF
+            title (str): Заголовок категорії
+            high_priority_items (list): Рекомендації з високим пріоритетом
+            normal_priority_items (list): Рекомендації з середнім пріоритетом
         """
-        if not recommendations:
+        if not high_priority_items and not normal_priority_items:
             return
             
-        elements.append(Paragraph("Рекомендації щодо оптимізації", self.heading_style))
+        elements.append(Paragraph(title, self.subheading_style))
         
-        # Add a brief explanation
-        elements.append(Paragraph(
-            "Нижче наведені рекомендації для покращення продуктивності сайту, "
-            "відсортовані за пріоритетом.", 
-            self.normal_style
-        ))
-        elements.append(Spacer(1, 0.5*cm))
-        
-        # Add priority indicators
-        critical_count = priorities.get("critical", 0) if priorities else 0
-        important_count = priorities.get("important", 0) if priorities else 0
-        
-        # Add each recommendation with an appropriate icon
-        for i, rec in enumerate(recommendations):
-            if i < critical_count:
-                indicator = "🔴"  # Critical
-            elif i < critical_count + important_count:
-                indicator = "🟠"  # Important
-            else:
-                indicator = "🟡"  # Other
-                
-            elements.append(Paragraph(f"{indicator} {rec}", self.normal_style))
+        # Додавання рекомендацій з високим пріоритетом
+        for rec in high_priority_items:
+            elements.append(Paragraph(f"🔴 {rec}", self.normal_style))
             
-        elements.append(Spacer(1, 0.5*cm))
+        # Додавання рекомендацій з середнім пріоритетом
+        for rec in normal_priority_items:
+            elements.append(Paragraph(f"🟠 {rec}", self.normal_style))
+            
+        elements.append(Spacer(1, 0.3*cm))

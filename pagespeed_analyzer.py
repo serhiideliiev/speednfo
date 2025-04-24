@@ -9,7 +9,6 @@ import requests
 import logging
 import re
 import json
-# Імпортуємо всі необхідні бібліотеки на початку файлу
 import colorsys
 from bs4 import BeautifulSoup
 from http.cookies import SimpleCookie
@@ -65,10 +64,16 @@ class PageSpeedAnalyzer:
                 "strategy": strategy,
                 "key": self.api_key,
                 "locale": "uk",  # Локалізація українською, якщо доступно
+                "category": "performance",  # Зосереджуємося на продуктивності
             }
             
             # Виконання запиту до API
-            response = self.session.get(self.api_url, params=params, headers=self.headers, timeout=30)
+            response = self.session.get(
+                self.api_url,
+                params=params,
+                headers=self.headers,
+                timeout=60  # Збільшений таймаут для великих сторінок
+            )
             response.raise_for_status()
             
             # Обробка відповіді
@@ -87,7 +92,8 @@ class PageSpeedAnalyzer:
             results = {
                 "score": int(data["lighthouseResult"]["categories"]["performance"]["score"] * 100),
                 "metrics": {},
-                "recommendations": []
+                "recommendations": [],
+                "recommendation_priorities": {"critical": 0, "important": 0, "other": 0}
             }
             
             # Отримання основних метрик
@@ -99,11 +105,13 @@ class PageSpeedAnalyzer:
                     metric = audits[metric_id]
                     results["metrics"][display_name] = {
                         "value": metric.get("displayValue", "N/A"),
-                        "rating": self._get_metric_rating(metric)
+                        "rating": self._get_metric_rating(metric),
+                        "score": metric.get("score", 0),
+                        "importance": self._get_metric_importance(metric_id)
                     }
             
-            # Збір рекомендацій щодо поліпшення швидкості
-            self._extract_recommendations(data, results)
+            # Збір та класифікація рекомендацій щодо поліпшення швидкості
+            self._extract_recommendations_with_priority(data, results)
             
             return results
             
@@ -117,6 +125,55 @@ class PageSpeedAnalyzer:
             logger.error(f"Невідома помилка: {e}", exc_info=True)
             return {"error": f"Невідома помилка: {str(e)}"}
     
+    def analyze_with_all_metrics(self, url):
+        """
+        Виконує комплексний аналіз з усіма метриками.
+        
+        Args:
+            url (str): URL для аналізу
+            
+        Returns:
+            dict: Комплексні результати аналізу
+        """
+        try:
+            results = {
+                "pagespeed": {},
+                "seo": {},
+                "accessibility": {},
+                "security": {}
+            }
+            
+            # Аналіз PageSpeed для мобільних
+            mobile_results = self.analyze(url, "mobile")
+            if "error" not in mobile_results:
+                results["pagespeed"]["mobile"] = mobile_results
+            
+            # Аналіз PageSpeed для десктопу
+            desktop_results = self.analyze(url, "desktop")
+            if "error" not in desktop_results:
+                results["pagespeed"]["desktop"] = desktop_results
+            
+            # SEO аналіз
+            seo_results = self.analyze_seo(url)
+            if "error" not in seo_results:
+                results["seo"] = seo_results
+            
+            # Аналіз доступності
+            accessibility_results = self.analyze_accessibility(url)
+            if "error" not in accessibility_results:
+                results["accessibility"] = accessibility_results
+            
+            # Аналіз безпеки
+            security_results = self.analyze_security(url)
+            if "error" not in security_results:
+                results["security"] = security_results
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Помилка при комплексному аналізі: {e}", exc_info=True)
+            return {"error": f"Помилка при комплексному аналізі: {str(e)}"}
+   
     def analyze_seo(self, url):
         """
         Аналізує SEO-показники сторінки.
@@ -358,55 +415,6 @@ class PageSpeedAnalyzer:
             logger.error(f"Помилка при аналізі безпеки: {e}", exc_info=True)
             return {"error": f"Помилка при аналізі безпеки: {str(e)}"}
 
-    def analyze_with_all_metrics(self, url):
-        """
-        Виконує комплексний аналіз з усіма метриками.
-        
-        Args:
-            url (str): URL для аналізу
-            
-        Returns:
-            dict: Комплексні результати аналізу
-        """
-        try:
-            results = {
-                "pagespeed": {},
-                "seo": {},
-                "accessibility": {},
-                "security": {}
-            }
-            
-            # Аналіз PageSpeed для мобільних
-            mobile_results = self.analyze(url, "mobile")
-            if "error" not in mobile_results:
-                results["pagespeed"]["mobile"] = mobile_results
-            
-            # Аналіз PageSpeed для десктопу
-            desktop_results = self.analyze(url, "desktop")
-            if "error" not in desktop_results:
-                results["pagespeed"]["desktop"] = desktop_results
-            
-            # SEO аналіз
-            seo_results = self.analyze_seo(url)
-            if "error" not in seo_results:
-                results["seo"] = seo_results
-            
-            # Аналіз доступності
-            accessibility_results = self.analyze_accessibility(url)
-            if "error" not in accessibility_results:
-                results["accessibility"] = accessibility_results
-            
-            # Аналіз безпеки
-            security_results = self.analyze_security(url)
-            if "error" not in security_results:
-                results["security"] = security_results
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Помилка при комплексному аналізі: {e}", exc_info=True)
-            return {"error": f"Помилка при комплексному аналізі: {str(e)}"}
-
     def _get_metric_rating(self, metric):
         """
         Визначає рейтинг метрики на основі її оцінки.
@@ -429,51 +437,96 @@ class PageSpeedAnalyzer:
             # Якщо оцінка відсутня, використовуємо scoreDisplayMode
             return metric.get("scoreDisplayMode", "not_available")
     
-    def _extract_recommendations(self, data, results):
+    def _get_metric_importance(self, metric_id):
         """
-        Extracts and prioritizes optimization recommendations from API data.
+        Визначає важливість метрики на основі її ідентифікатора.
+        
+        Args:
+            metric_id (str): Ідентифікатор метрики
+            
+        Returns:
+            str: Рівень важливості ("critical", "important", або "moderate")
+        """
+        critical_metrics = [
+            "largest-contentful-paint",
+            "first-contentful-paint",
+            "interactive"
+        ]
+        
+        important_metrics = [
+            "speed-index",
+            "total-blocking-time"
+        ]
+        
+        if metric_id in critical_metrics:
+            return "critical"
+        elif metric_id in important_metrics:
+            return "important"
+        else:
+            return "moderate"
+
+    def _extract_recommendations_with_priority(self, data, results):
+        """
+        Витягує та пріоритизує рекомендації щодо оптимізації з даних API.
+        
+        Args:
+            data (dict): Дані відповіді API
+            results (dict): Словник результатів для заповнення
         """
         try:
             audits = data["lighthouseResult"]["audits"]
+            
+            # Списки для різних пріоритетів рекомендацій
             critical_recommendations = []
             important_recommendations = []
             other_recommendations = []
             
+            # Ключові слова для визначення пріоритету
+            critical_keywords = [
+                "lcp", "fcp", "interactive", "блокують", "render-blocking",
+                "contentful", "largest", "first", "взаємодія", "завантаження"
+            ]
+            
             for audit_id, audit in audits.items():
-                # Skip if no title or already perfect score
+                # Пропускаємо аудити без заголовка або з ідеальною оцінкою
                 if "title" not in audit or audit.get("score") == 1:
                     continue
-                    
-                # Determine recommendation priority based on score and importance
-                score = audit.get("score") # Get score, could be None
-                if ("details" in audit and audit.get("details", {}).get("type") == "opportunity"):
-                    # Check if this is a critical issue
-                    # Handle None score explicitly
-                    if score is not None and (score == 0 or audit_id in ["render-blocking-resources", "largest-contentful-paint"]):
-                        critical_recommendations.append(audit["title"])
-                    # Important but not critical
-                    # Handle None score explicitly
-                    elif score is not None and score <= 0.5:
-                        important_recommendations.append(audit["title"])
-                    # Other opportunities
-                    else:
-                        other_recommendations.append(audit["title"])
-                # Add other audits with poor scores
-                # Handle None score explicitly
-                elif score is not None and score <= 0.5:
-                    other_recommendations.append(audit["title"])
+                
+                # Визначення пріоритету рекомендації
+                audit_title = audit["title"]
+                audit_id_lower = audit_id.lower()
+                is_critical = any(keyword in audit_id_lower for keyword in critical_keywords)
+                
+                # Перевірка, чи це "можливість оптимізації"
+                is_opportunity = ("details" in audit and 
+                                 "type" in audit["details"] and 
+                                 audit["details"]["type"] == "opportunity")
+                
+                # Визначення пріоритету на основі оцінки та інших факторів
+                if (audit.get("score", 1) == 0 or is_critical) and is_opportunity:
+                    critical_recommendations.append(audit_title)
+                elif audit.get("score", 1) <= 0.5 and is_opportunity:
+                    important_recommendations.append(audit_title)
+                elif is_opportunity:
+                    other_recommendations.append(audit_title)
             
-            # Add recommendations to results in priority order, limiting to avoid overwhelming
-            results["recommendations"] = critical_recommendations + important_recommendations + other_recommendations[:10]
+            # Оновлення результатів з пріоритизованими рекомендаціями
+            results["recommendations"] = (
+                critical_recommendations + 
+                important_recommendations + 
+                other_recommendations
+            )
+            
+            # Додавання інформації про кількість рекомендацій кожного пріоритету
             results["recommendation_priorities"] = {
                 "critical": len(critical_recommendations),
                 "important": len(important_recommendations),
                 "other": len(other_recommendations)
             }
-                
+            
         except Exception as e:
             logger.error(f"Помилка при витяганні рекомендацій: {e}", exc_info=True)
-
+    
     def _check_contrast_issues(self, soup):
         """
         Виконує спрощену перевірку контрасту для елементів сторінки.
@@ -495,65 +548,6 @@ class PageSpeedAnalyzer:
                 contrast_issues += 1
                 
         return contrast_issues
-
-    def _parse_color(self, color_str):
-        """
-        Конвертує CSS колір у RGB.
-        
-        Args:
-            color_str (str): CSS колір у форматі #RGB, #RRGGBB, rgb() або rgba()
-            
-        Returns:
-            tuple: RGB кортеж (r, g, b)
-        """
-        try:
-            if color_str.startswith("#"):
-                if len(color_str) == 4:  # #RGB
-                    r = int(color_str[1] + color_str[1], 16)
-                    g = int(color_str[2] + color_str[2], 16)
-                    b = int(color_str[3] + color_str[3], 16)
-                else:  # #RRGGBB
-                    r = int(color_str[1:3], 16)
-                    g = int(color_str[3:5], 16)
-                    b = int(color_str[5:7], 16)
-                return (r, g, b)
-            elif color_str.startswith("rgb"):
-                # rgb(r, g, b) або rgba(r, g, b, a)
-                match = re.search(r'rgb\((\d+),\s*(\d+),\s*(\d+)', color_str)
-                if match:
-                    return tuple(map(int, match.groups()))
-            
-            # За замовчуванням, якщо не вдалося розпізнати колір
-            return (0, 0, 0)
-        except Exception:
-            return (0, 0, 0)  # За замовчуванням чорний
-            
-    def _calculate_contrast_ratio(self, color1, color2):
-        """
-        Розраховує відношення контрасту між двома кольорами за формулою WCAG.
-        
-        Args:
-            color1 (tuple): Перший колір у форматі RGB
-            color2 (tuple): Другий колір у форматі RGB
-            
-        Returns:
-            float: Відношення контрасту
-        """
-        # Конвертація RGB у відносну яскравість
-        def get_luminance(rgb):
-            r, g, b = [x / 255 for x in rgb]
-            r = r / 12.92 if r <= 0.03928 else ((r + 0.055) / 1.055) ** 2.4
-            g = g / 12.92 if g <= 0.03928 else ((g + 0.055) / 1.055) ** 2.4
-            b = b / 12.92 if b <= 0.03928 else ((b + 0.055) / 1.055) ** 2.4
-            return 0.2126 * r + 0.7152 * g + 0.0722 * b
-            
-        l1 = get_luminance(color1)
-        l2 = get_luminance(color2)
-        
-        # Розрахунок відношення контрасту
-        lighter = max(l1, l2)
-        darker = min(l1, l2)
-        return (lighter + 0.05) / (darker + 0.05)
 
     def _analyze_cookies(self, cookies):
         """
