@@ -431,29 +431,42 @@ class PageSpeedAnalyzer:
     
     def _extract_recommendations(self, data, results):
         """
-        Витягує рекомендації щодо оптимізації з даних API.
-        
-        Args:
-            data (dict): Дані відповіді API
-            results (dict): Словник результатів для заповнення
+        Extracts and prioritizes optimization recommendations from API data.
         """
         try:
             audits = data["lighthouseResult"]["audits"]
+            critical_recommendations = []
+            important_recommendations = []
+            other_recommendations = []
             
             for audit_id, audit in audits.items():
-                # Перевіряємо, чи це "можливість оптимізації"
-                if ("details" in audit and 
-                    "type" in audit["details"] and 
-                    audit["details"]["type"] == "opportunity"):
+                # Skip if no title or already perfect score
+                if "title" not in audit or audit.get("score") == 1:
+                    continue
                     
-                    # Додаємо рекомендацію, якщо оцінка нижче максимальної
-                    if "score" in audit and audit["score"] < 1:
-                        results["recommendations"].append(audit["title"])
-                        
-                # Додаємо також критичні помилки
-                elif audit.get("score") == 0 and "title" in audit:
-                    results["recommendations"].append(audit["title"])
-                    
+                # Determine recommendation priority based on score and importance
+                if ("details" in audit and audit.get("details", {}).get("type") == "opportunity"):
+                    # Check if this is a critical issue
+                    if audit.get("score", 1) == 0 or audit_id in ["render-blocking-resources", "largest-contentful-paint"]:
+                        critical_recommendations.append(audit["title"])
+                    # Important but not critical
+                    elif audit.get("score", 1) <= 0.5:
+                        important_recommendations.append(audit["title"])
+                    # Other opportunities
+                    else:
+                        other_recommendations.append(audit["title"])
+                # Add other audits with poor scores
+                elif audit.get("score", 1) <= 0.5:
+                    other_recommendations.append(audit["title"])
+            
+            # Add recommendations to results in priority order, limiting to avoid overwhelming
+            results["recommendations"] = critical_recommendations + important_recommendations + other_recommendations[:10]
+            results["recommendation_priorities"] = {
+                "critical": len(critical_recommendations),
+                "important": len(important_recommendations),
+                "other": len(other_recommendations)
+            }
+                
         except Exception as e:
             logger.error(f"Помилка при витяганні рекомендацій: {e}", exc_info=True)
 
