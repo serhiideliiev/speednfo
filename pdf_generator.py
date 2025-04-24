@@ -15,6 +15,9 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import cm
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.legends import Legend
 
 from config import FONT_PATH, PDF_AUTHOR, PDF_TITLE, PDF_SUBJECT, logger
 from utils import get_score_status
@@ -137,6 +140,9 @@ class PDFReportGenerator:
             desktop_results['metrics'],
             doc.width
         )
+
+        # Додавання графіка порівняння продуктивності
+        self._add_performance_chart(elements, mobile_results, desktop_results, doc.width)
         
         # Додавання рекомендацій
         self._add_recommendations_section(
@@ -185,7 +191,85 @@ class PDFReportGenerator:
         
         elements.append(t)
         elements.append(Spacer(1, 1*cm))
-    
+
+    def _add_performance_chart(self, elements, mobile_results, desktop_results, width):
+        """Додає візуальну діаграму порівняння продуктивності."""
+        from reportlab.graphics.shapes import Drawing
+        from reportlab.graphics.charts.barcharts import VerticalBarChart
+        
+        # Створення базової діаграми
+        drawing = Drawing(width, 200)
+        chart = VerticalBarChart()
+        chart.x = 50
+        chart.y = 50
+        chart.height = 125
+        chart.width = width - 100
+        
+        # Дані для діаграми (мобільний та десктоп)
+        data = [
+            [mobile_results['score']],
+            [desktop_results['score']]
+        ]
+        chart.data = data
+        
+        # Налаштування вигляду
+        chart.bars[0].fillColor = colors.lightblue
+        chart.bars[1].fillColor = colors.green
+        chart.valueAxis.valueMin = 0
+        chart.valueAxis.valueMax = 100
+        chart.valueAxis.valueStep = 10
+        chart.categoryAxis.labels.boxAnchor = 'n'
+        chart.categoryAxis.labels.dx = 0
+        chart.categoryAxis.labels.dy = -10
+        chart.categoryAxis.categoryNames = ['Продуктивність']
+        
+        # Додавання легенди
+        from reportlab.graphics.charts.legends import Legend
+        legend = Legend()
+        legend.alignment = 'right'
+        legend.x = width - 100
+        legend.y = 150
+        legend.colorNamePairs = [(colors.lightblue, 'Мобільний'), 
+                                (colors.green, 'Десктоп')]
+        drawing.add(legend)
+        drawing.add(chart)
+        
+        elements.append(drawing)
+        elements.append(Spacer(1, 0.5*cm))
+
+    def _add_metrics_heatmap(self, elements, metrics, width):
+        """Додає теплову карту для метрик."""
+        data = [["Метрика", "Значення", "Статус"]]
+        
+        for name, metric_data in metrics.items():
+            rating = metric_data['rating']
+            color = colors.green if rating == 'good' else \
+                    colors.orange if rating == 'average' else colors.red
+            
+            data.append([name, metric_data['value'], rating])
+        
+        table = Table(data, colWidths=[width*0.5, width*0.25, width*0.25])
+        
+        # Динамічні стилі на основі рейтингу
+        style = [
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Ukrainian'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ]
+        
+        # Додаємо кольори для кожного рядка на основі рейтингу
+        for i, row in enumerate(data[1:], 1):
+            rating = row[2]
+            color = colors.lightgreen if rating == 'good' else \
+                    colors.lightyellow if rating == 'average' else colors.lightcoral
+            style.append(('BACKGROUND', (2, i), (2, i), color))
+        
+        table.setStyle(TableStyle(style))
+        elements.append(table)
+        elements.append(Spacer(1, 0.5*cm))
+        
     def _add_metrics_section(self, elements, title, metrics, width):
         """
         Додає секцію з детальними метриками.

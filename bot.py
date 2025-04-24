@@ -164,7 +164,41 @@ class PageSpeedBot:
             await status_message.edit_text(
                 BOT_MESSAGES["error"].format(error=str(e))
             )
-    
+
+    async def full_analysis(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Виконує повний комплексний аналіз URL."""
+        args = context.args
+        
+        if not args:
+            await update.message.reply_text(
+                "Будь ласка, надайте URL для аналізу після команди.\n"
+                "Наприклад: /full https://example.com"
+            )
+            return
+        
+        url = args[0]
+        
+        # Перевірка правильності URL
+        if not is_valid_url(url):
+            await update.message.reply_text(BOT_MESSAGES["invalid_url"])
+            return
+        
+        # Повідомлення про початок аналізу
+        status_message = await update.message.reply_text(
+            "🔍 Починаю комплексний аналіз URL...\n"
+            "Це може зайняти кілька хвилин. Будь ласка, зачекайте."
+        )
+        
+        try:
+            # Виконання повного аналізу
+            results = self.analyzer.analyze_with_all_metrics(url)
+        
+        except Exception as e:
+            logger.error(f"Помилка при комплексному аналізі: {e}", exc_info=True)
+            await status_message.edit_text(
+                BOT_MESSAGES["error"].format(error=str(e))
+            )
+        
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обробник натискань на кнопки."""
         query = update.callback_query
