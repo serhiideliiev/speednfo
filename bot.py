@@ -6,6 +6,7 @@
 """
 
 import logging
+import json
 from datetime import datetime
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -46,6 +47,7 @@ class PageSpeedBot:
         application.add_handler(CommandHandler("start", self.start))
         application.add_handler(CommandHandler("help", self.help_command))
         application.add_handler(CommandHandler("about", self.about_command))
+        application.add_handler(CommandHandler("full", self.full_analysis))
         
         # Додавання обробника повідомлень
         application.add_handler(
@@ -119,11 +121,6 @@ class PageSpeedBot:
             logger.debug(f"PDF generated, size: {pdf_bytes.getbuffer().nbytes} bytes")
             pdf_bytes.seek(0)
             
-            # Збереження PDF локально для тесту
-            with open("debug_report.pdf", "wb") as f:
-                f.write(pdf_bytes.read())
-            pdf_bytes.seek(0)
-            
             # Підготовка назви файлу
             filename = generate_filename(url)
             logger.debug(f"Sending PDF to user with filename: {filename}")
@@ -192,7 +189,86 @@ class PageSpeedBot:
         try:
             # Виконання повного аналізу
             results = self.analyzer.analyze_with_all_metrics(url)
-        
+            
+            # Перевірка на наявність помилок
+            if "error" in results:
+                await status_message.edit_text(
+                    BOT_MESSAGES["error"].format(error=results["error"])
+                )
+                return
+            
+            # Оновлення статусу
+            await status_message.edit_text("📊 Комплексний аналіз завершено. Генерую PDF-звіт...")
+            
+            # Розрахунок оцінок
+            mobile_score = results['pagespeed'].get('mobile', {}).get('score', 0)
+            desktop_score = results['pagespeed'].get('desktop', {}).get('score', 0)
+            
+            # Спрощені оцінки для SEO, доступності та безпеки
+            seo_score = 100 if not results['seo'].get('recommendations') else 70
+            accessibility_score = 100 if not results['accessibility'].get('recommendations') else 70
+            security_score = 100 if not results['security'].get('recommendations') else 70
+            
+            # Створення PDF зі звітом
+            # Використовуємо існуючу функцію для простоти, але в реальному проекті 
+            # варто створити окрему функцію для комплексного звіту
+            pdf_bytes = self.pdf_generator.generate_report(
+                url, 
+                results['pagespeed'].get('mobile', {}), 
+                results['pagespeed'].get('desktop', {})
+            )
+            pdf_bytes.seek(0)
+            
+            # Підготовка назви файлу для повного аналізу
+            filename = generate_filename(url, prefix="full_analysis")
+            
+            # Відправка PDF файлу
+            await update.message.reply_document(
+                document=pdf_bytes,
+                filename=filename,
+                caption=BOT_MESSAGES["full_analysis_complete"].format(
+                    url=url,
+                    mobile_score=mobile_score,
+                    desktop_score=desktop_score,
+                    seo_score=seo_score,
+                    accessibility_score=accessibility_score,
+                    security_score=security_score
+                )
+            )
+            
+            # Видалення статусного повідомлення
+            await status_message.delete()
+            
+            # Додаткове повідомлення з рекомендаціями
+            recommendations_msg = "📌 **Основні рекомендації:**\n\n"
+            
+            # Додаємо рекомендації з різних аналізів
+            if 'recommendations' in results['pagespeed'].get('mobile', {}):
+                mobile_recs = results['pagespeed']['mobile']['recommendations'][:3]  # Обмежуємо до 3
+                if mobile_recs:
+                    recommendations_msg += "📱 **Мобільна версія:**\n"
+                    for rec in mobile_recs:
+                        recommendations_msg += f"• {rec}\n"
+                    recommendations_msg += "\n"
+            
+            if 'recommendations' in results.get('seo', {}):
+                seo_recs = results['seo']['recommendations'][:3]  # Обмежуємо до 3
+                if seo_recs:
+                    recommendations_msg += "🔍 **SEO:**\n"
+                    for rec in seo_recs:
+                        recommendations_msg += f"• {rec}\n"
+                    recommendations_msg += "\n"
+            
+            if 'recommendations' in results.get('security', {}):
+                security_recs = results['security']['recommendations'][:3]  # Обмежуємо до 3
+                if security_recs:
+                    recommendations_msg += "🔒 **Безпека:**\n"
+                    for rec in security_recs:
+                        recommendations_msg += f"• {rec}\n"
+            
+            # Відправляємо рекомендації
+            await update.message.reply_text(recommendations_msg, parse_mode="Markdown")
+            
         except Exception as e:
             logger.error(f"Помилка при комплексному аналізі: {e}", exc_info=True)
             await status_message.edit_text(
@@ -205,19 +281,39 @@ class PageSpeedBot:
         await query.answer()
         
         # Розбір даних з кнопки
-        data = query.data.split("_")
-        if len(data) < 3:
+        callback_data = query.data
+        
+        # Перевірка формату callback_data
+        if not callback_data or "_" not in callback_data:
             await query.edit_message_text("❌ Помилка: неправильний формат даних кнопки")
             return
             
-        action = data[0]
-        device = data[1]
-        url = "_".join(data[2:])  # На випадок, якщо в URL є символ "_"
+        # Безпечний парсинг callback_data
+        parts = callback_data.split("_", 2)  # Розділяємо тільки на перші 2 підкреслення
+        if len(parts) < 3:
+            await query.edit_message_text("❌ Помилка: неправильний формат даних кнопки")
+            return
+            
+        action = parts[0]
+        device = parts[1]
+        url = parts[2]  # Все після другого підкреслення вважаємо URL
         
         if action == "detail":
+            # Валідація пристрою
+            if device not in ["mobile", "desktop"]:
+                await query.edit_message_text("❌ Помилка: неправильний тип пристрою")
+                return
+                
+            # Повідомлення про початок аналізу
             await query.edit_message_text(f"🔍 Отримую детальний аналіз для {device}...")
             
             try:
+                # Перевірка правильності URL
+                if not is_valid_url(url):
+                    await query.edit_message_text(BOT_MESSAGES["invalid_url"])
+                    return
+                    
+                # Отримання результатів аналізу
                 results = self.analyzer.analyze(url, device)
                 if "error" in results:
                     await query.edit_message_text(f"❌ Помилка: {results['error']}")
@@ -249,6 +345,8 @@ class PageSpeedBot:
                 await query.edit_message_text(
                     BOT_MESSAGES["error"].format(error=str(e))
                 )
+        else:
+            await query.edit_message_text("❌ Непідтримувана дія")
     
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обробник помилок."""

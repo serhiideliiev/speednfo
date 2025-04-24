@@ -7,12 +7,17 @@
 """
 
 import os
+import sys
 import logging
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Завантаження змінних середовища з .env файлу, якщо він існує
+load_dotenv()
 
 # Налаштування логування
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -21,14 +26,27 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 
 # Telegram Bot налаштування
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    logger.error("TELEGRAM_BOT_TOKEN environment variable is required")
+    sys.exit(1)
 
 # Google PageSpeed Insights API налаштування
-PAGESPEED_API_KEY = os.environ.get("PAGESPEED_API_KEY", "YOUR_GOOGLE_PAGESPEED_API_KEY")
+PAGESPEED_API_KEY = os.environ.get("PAGESPEED_API_KEY")
+if not PAGESPEED_API_KEY:
+    logger.error("PAGESPEED_API_KEY environment variable is required")
+    sys.exit(1)
+
 PAGESPEED_API_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
 
 # Шлях до українського шрифту для PDF
-FONT_PATH = os.environ.get("PDF_FONT_PATH", str(BASE_DIR / "fonts" / "ukrainian_font.ttf"))
+DEFAULT_FONT_PATH = str(BASE_DIR / "fonts" / "ukrainian_font.ttf")
+FONT_PATH = os.environ.get("PDF_FONT_PATH", DEFAULT_FONT_PATH)
+
+# Перевірка наявності шрифту
+if not Path(FONT_PATH).exists():
+    logger.warning(f"Font file not found at {FONT_PATH}, will use fallback font")
+    FONT_PATH = None
 
 # Налаштування PDF
 PDF_AUTHOR = "PageSpeed Telegram Bot"
@@ -91,6 +109,14 @@ BOT_MESSAGES = {
         "📑 Звіт аналізу для {url}\n\n"
         "📱 Мобільний: {mobile_score}/100\n"
         "🖥️ Десктоп: {desktop_score}/100"
+    ),
+    "full_analysis_complete": (
+        "📊 Комплексний аналіз завершено.\n\n"
+        "📱 Mobile Performance: {mobile_score}/100\n"
+        "🖥️ Desktop Performance: {desktop_score}/100\n"
+        "🔍 SEO Score: {seo_score}/100\n"
+        "♿ Accessibility Score: {accessibility_score}/100\n"
+        "🔒 Security Score: {security_score}/100"
     )
 }
 
