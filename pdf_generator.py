@@ -340,7 +340,6 @@ class PDFReportGenerator:
         # Додавання підпису для осі Y
         y_label = String(15, 125, "Оцінка", fontSize=10, fontName="Helvetica")
         y_label.textAnchor = "middle"
-        y_label.angle = 90
         drawing.add(y_label)
         
         # Додавання легенди

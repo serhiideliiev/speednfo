@@ -503,9 +503,10 @@ class PageSpeedAnalyzer:
                                  audit["details"]["type"] == "opportunity")
                 
                 # Визначення пріоритету на основі оцінки та інших факторів
-                if (audit.get("score", 1) == 0 or is_critical) and is_opportunity:
+                score = audit.get("score", 1)
+                if (score == 0 or is_critical) and is_opportunity:
                     critical_recommendations.append(audit_title)
-                elif audit.get("score", 1) <= 0.5 and is_opportunity:
+                elif score is not None and score <= 0.5 and is_opportunity:
                     important_recommendations.append(audit_title)
                 elif is_opportunity:
                     other_recommendations.append(audit_title)
