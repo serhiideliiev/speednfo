@@ -284,8 +284,7 @@ class PDFReportGenerator:
 
     def _add_performance_chart(self, elements, mobile_results, desktop_results, width):
         """
-        Додає графік порівняння продуктивності з гарантованим відображенням 
-        за допомогою Unicode-символів замість ReportLab Drawing.
+        Додає спрощену та чітку візуалізацію порівняння продуктивності.
         
         Args:
             elements (list): Список елементів PDF
@@ -300,54 +299,83 @@ class PDFReportGenerator:
         mobile_score = mobile_results.get("score", 0) if mobile_results else 0
         desktop_score = desktop_results.get("score", 0) if desktop_results else 0
         
-        # Створюємо таблицю для візуалізації діаграми
-        # Використовуємо Unicode Block Elements для гарантованого відображення
-        
         # Функція для створення візуальної смуги з Unicode-символів
         def create_bar(score, max_length=20):
-            # Кількість символів пропорційна оцінці (максимум max_length символів)
             bar_length = int(round(score / 100 * max_length))
+            # Переконуємося, що завжди є хоча б один символ, якщо score > 0
+            if score > 0 and bar_length == 0:
+                bar_length = 1
             return "█" * bar_length
         
-        # Створюємо дані для таблиці
+        # Створюємо структуровану таблицю для відображення діаграми
+        # Три стовпці: пристрій і оцінка | візуальна смуга | відсоток
         data = [
-            ["Пристрій", "Оцінка", "Візуальне представлення"],
-            ["Мобільний", f"{mobile_score}/100", create_bar(mobile_score)],
-            ["Десктоп", f"{desktop_score}/100", create_bar(desktop_score)]
+            ["Платформа", "Візуалізація (кожен █ = 5 балів)", ""],
+            [f"Мобільний ({mobile_score}/100)", create_bar(mobile_score), f"{mobile_score}%"],
+            [f"Десктоп ({desktop_score}/100)", create_bar(desktop_score), f"{desktop_score}%"]
         ]
         
-        # Створюємо таблицю
-        chart_table = Table(data, colWidths=[width*0.2, width*0.15, width*0.65])
+        # Ширина стовпців: 30% для пристрою, 60% для смуги, 10% для відсотка
+        chart_table = Table(data, colWidths=[width*0.3, width*0.6, width*0.1])
         
-        # Стилізуємо таблицю
+        # Стилізація таблиці
         font_name = "Helvetica"  # Використовуємо стандартний шрифт для надійності
         table_style = [
+            # Стиль заголовка
             ("BACKGROUND", (0, 0), (-1, 0), self.header_bg_color),
             ("TEXTCOLOR", (0, 0), (-1, 0), self.header_text_color),
             ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-            ("ALIGN", (0, 1), (1, -1), "CENTER"),
-            ("ALIGN", (2, 1), (2, -1), "LEFT"),
-            ("FONTNAME", (0, 0), (-1, -1), font_name),
+            ("FONTNAME", (0, 0), (-1, 0), font_name),
             ("FONTSIZE", (0, 0), (-1, 0), 12),
-            ("FONTSIZE", (2, 1), (2, -1), 14),  # Більший розмір для барів
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("TOPPADDING", (0, 0), (-1, 0), 8),
-            ("GRID", (0, 0), (-1, -1), 1, colors.black),
-            ("TEXTCOLOR", (2, 1), (2, 1), self.mobile_color),
-            ("TEXTCOLOR", (2, 2), (2, 2), self.desktop_color),
+            ("SPAN", (0, 0), (0, 0)),  # Об'єднуємо клітинки в заголовку
+            ("SPAN", (1, 0), (2, 0)),  # Об'єднуємо клітинки в заголовку
+            
+            # Стиль даних
+            ("ALIGN", (0, 1), (0, -1), "LEFT"),   # Пристрій вирівнюємо зліва
+            ("ALIGN", (1, 1), (1, -1), "LEFT"),   # Смугу вирівнюємо зліва
+            ("ALIGN", (2, 1), (2, -1), "RIGHT"),  # Відсоток вирівнюємо справа
+            ("FONTNAME", (0, 1), (-1, -1), font_name),
+            ("FONTSIZE", (1, 1), (1, -1), 14),  # Більший розмір для символів смуги
+            
+            # Колір тексту для мобільної і десктопної версій
+            ("TEXTCOLOR", (0, 1), (0, 1), self.mobile_color),  # Колір для мобільного
+            ("TEXTCOLOR", (1, 1), (1, 1), self.mobile_color),  # Колір для смуги мобільного
+            ("TEXTCOLOR", (2, 1), (2, 1), self.mobile_color),  # Колір для відсотка мобільного
+            
+            ("TEXTCOLOR", (0, 2), (0, 2), self.desktop_color),  # Колір для десктопу
+            ("TEXTCOLOR", (1, 2), (1, 2), self.desktop_color),  # Колір для смуги десктопу
+            ("TEXTCOLOR", (2, 2), (2, 2), self.desktop_color),  # Колір для відсотка десктопу
+            
+            # Межі
+            ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.black),
+            
+            # Відступи
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+            ("TOPPADDING", (0, 0), (-1, 0), 10),
+            ("LEFTPADDING", (1, 1), (1, -1), 10),  # Більший відступ зліва для смуг
         ]
+        
+        # Додаємо фонові кольори залежно від оцінки
+        # Для мобільного
+        if mobile_score >= 90:
+            table_style.append(("BACKGROUND", (0, 1), (0, 1), self.good_bg_color))
+        elif mobile_score >= 50:
+            table_style.append(("BACKGROUND", (0, 1), (0, 1), self.average_bg_color))
+        else:
+            table_style.append(("BACKGROUND", (0, 1), (0, 1), self.poor_bg_color))
+            
+        # Для десктопу
+        if desktop_score >= 90:
+            table_style.append(("BACKGROUND", (0, 2), (0, 2), self.good_bg_color))
+        elif desktop_score >= 50:
+            table_style.append(("BACKGROUND", (0, 2), (0, 2), self.average_bg_color))
+        else:
+            table_style.append(("BACKGROUND", (0, 2), (0, 2), self.poor_bg_color))
         
         chart_table.setStyle(TableStyle(table_style))
         elements.append(chart_table)
         elements.append(Spacer(1, 0.5*cm))
-        
-        # Додаємо пояснювальний текст
-        elements.append(Paragraph(
-            "Примітка: Візуальне представлення показує відносну продуктивність. "
-            "Кожен символ █ представляє приблизно 5 балів за шкалою від 0 до 100.",
-            self.small_style
-        ))
-        elements.append(Spacer(1, 0.8*cm))
 
     def _add_metrics_section(self, elements, title, metrics, width):
         """
