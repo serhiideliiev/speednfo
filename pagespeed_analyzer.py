@@ -445,18 +445,22 @@ class PageSpeedAnalyzer:
                     continue
                     
                 # Determine recommendation priority based on score and importance
+                score = audit.get("score") # Get score, could be None
                 if ("details" in audit and audit.get("details", {}).get("type") == "opportunity"):
                     # Check if this is a critical issue
-                    if audit.get("score", 1) == 0 or audit_id in ["render-blocking-resources", "largest-contentful-paint"]:
+                    # Handle None score explicitly
+                    if score is not None and (score == 0 or audit_id in ["render-blocking-resources", "largest-contentful-paint"]):
                         critical_recommendations.append(audit["title"])
                     # Important but not critical
-                    elif audit.get("score", 1) <= 0.5:
+                    # Handle None score explicitly
+                    elif score is not None and score <= 0.5:
                         important_recommendations.append(audit["title"])
                     # Other opportunities
                     else:
                         other_recommendations.append(audit["title"])
                 # Add other audits with poor scores
-                elif audit.get("score", 1) <= 0.5:
+                # Handle None score explicitly
+                elif score is not None and score <= 0.5:
                     other_recommendations.append(audit["title"])
             
             # Add recommendations to results in priority order, limiting to avoid overwhelming

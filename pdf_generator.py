@@ -15,7 +15,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import cm
-from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.shapes import Drawing, String  # Import String
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.graphics.charts.legends import Legend
 
@@ -256,6 +256,8 @@ class PDFReportGenerator:
         chart.categoryAxis.categoryNames = ['Показники продуктивності']
         
         # Add axis labels
+        # Determine font name based on availability
+        font_name = "Ukrainian" if self.use_ukrainian_font else "Helvetica"
         y_axis_label = String(10, 85, 'Оцінка (0-100)', fontSize=10, fontName=font_name)
         y_axis_label.textAnchor = 'middle'
         y_axis_label.angle = 90
