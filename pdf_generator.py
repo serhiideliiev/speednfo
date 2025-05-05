@@ -15,9 +15,11 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import cm
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
 from config import FONT_PATH, PDF_AUTHOR, PDF_TITLE, PDF_SUBJECT, logger
 from utils import get_score_status
+from pagespeed_analyzer import PRIORITIZATION_TERMS_UK, IMPACT_THRESHOLDS_MS, SCORE_MAPPING
 
 
 class PDFReportGenerator:
@@ -145,8 +147,8 @@ class PDFReportGenerator:
         doc = SimpleDocTemplate(
             buffer,
             pagesize=A4,
-            rightMargin=2*cm,
-            leftMargin=2*cm,
+            rightMargin=1.5*cm,
+            leftMargin=1.5*cm,
             topMargin=2*cm,
             bottomMargin=2*cm,
             title=PDF_TITLE,
@@ -181,16 +183,16 @@ class PDFReportGenerator:
                 doc.width
             )
         
-        # Додавання візуальної діаграми порівняння продуктивності
-        # self._add_performance_chart(elements, mobile_results, desktop_results, doc.width) # Removed as requested
-        
-        # Додавання рекомендацій
-        if mobile_results and desktop_results:
-            self._add_recommendations_section(
-                elements,
-                mobile_results.get("recommendations", []),
-                desktop_results.get("recommendations", [])
-            )
+        # Додавання пріоритезованих рекомендацій
+        recommendations_data = mobile_results.get("prioritized_recommendations") if mobile_results else None
+        if not recommendations_data and desktop_results:
+            recommendations_data = desktop_results.get("prioritized_recommendations")
+
+        if recommendations_data and recommendations_data.get("categories"):
+            self._add_prioritized_recommendations_section(elements, recommendations_data, doc.width)
+        else:
+            logger.warning(f"Не знайдено даних пріоритезованих рекомендацій для URL: {url}")
+            elements.append(Paragraph("Рекомендації щодо оптимізації відсутні або не вдалося їх отримати.", self.normal_style))
         
         # Створення PDF
         doc.build(elements)
@@ -282,109 +284,6 @@ class PDFReportGenerator:
         elements.append(table)
         elements.append(Spacer(1, 1*cm))
 
-    def _add_performance_chart(self, elements, mobile_results, desktop_results, width):
-        """
-        Додає спрощену та чітку візуалізацію порівняння продуктивності.
-        
-        Args:
-            elements (list): Список елементів PDF
-            mobile_results (dict): Результати для мобільних пристроїв
-            desktop_results (dict): Результати для десктопу
-            width (float): Ширина документа
-        """
-        elements.append(Paragraph("Порівняння продуктивності", self.heading_style))
-        elements.append(Spacer(1, 0.5*cm))
-        
-        # Отримання оцінок з результатів
-        mobile_score = mobile_results.get("score", 0) if mobile_results else 0
-        desktop_score = desktop_results.get("score", 0) if desktop_results else 0
-        
-        # Функція для створення візуальної смуги з Unicode-символів
-        def create_bar(score, points_per_symbol=25):
-            # Calculate number of symbols based on new scale
-            bar_length = int(round(score / points_per_symbol)) 
-            # Переконуємося, що завжди є хоча б один символ, якщо score > 0
-            if score > 0 and bar_length == 0:
-                bar_length = 1
-            # Use a bullet symbol
-            return "•" * bar_length
-        
-        # Створюємо структуровану таблицю для відображення діаграми
-        # Три стовпці: пристрій і оцінка | візуальна смуга | відсоток
-        data = [
-            # Update the header text to reflect the new scale
-            ["Платформа", "Візуалізація (кожен • = 25 балів)", ""], 
-            [f"Мобільний ({mobile_score}/100)", create_bar(mobile_score), f"{mobile_score}%"],
-            [f"Десктоп ({desktop_score}/100)", create_bar(desktop_score), f"{desktop_score}%"]
-        ]
-        
-        # Ширина стовпців: 30% для пристрою, 60% для смуги, 10% для відсотка
-        chart_table = Table(data, colWidths=[width*0.3, width*0.6, width*0.1])
-        
-        # Стилізація таблиці
-        # Use the registered font (Ukrainian if available, otherwise Helvetica)
-        font_name = "Ukrainian" if self.use_ukrainian_font else "Helvetica"
-        table_style = [
-            # Стиль заголовка
-            ("BACKGROUND", (0, 0), (-1, 0), self.header_bg_color),
-            ("TEXTCOLOR", (0, 0), (-1, 0), self.header_text_color),
-            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), font_name),
-            ("FONTSIZE", (0, 0), (-1, 0), 12),
-            # Adjust span for the updated header text
-            ("SPAN", (1, 0), (2, 0)),  # Span the visualization header over the bar and percentage columns
-            
-            # Стиль даних
-            ("ALIGN", (0, 1), (0, -1), "LEFT"),   # Пристрій вирівнюємо зліва
-            ("ALIGN", (1, 1), (1, -1), "LEFT"),   # Смугу вирівнюємо зліва
-            ("ALIGN", (2, 1), (2, -1), "RIGHT"),  # Відсоток вирівнюємо справа
-            ("FONTNAME", (0, 1), (-1, -1), font_name),
-            # Increase font size for the bullet symbols (column 1, rows 1 and 2)
-            ("FONTSIZE", (1, 1), (1, -1), 18),  # Increased size for bullets
-            # Keep other text size normal
-            ("FONTSIZE", (0, 1), (0, -1), 12), 
-            ("FONTSIZE", (2, 1), (2, -1), 12), 
-            
-            # Колір тексту для мобільної і десктопної версій
-            ("TEXTCOLOR", (0, 1), (0, 1), self.mobile_color),  # Колір для мобільного
-            ("TEXTCOLOR", (1, 1), (1, 1), self.mobile_color),  # Колір для смуги мобільного
-            ("TEXTCOLOR", (2, 1), (2, 1), self.mobile_color),  # Колір для відсотка мобільного
-            
-            ("TEXTCOLOR", (0, 2), (0, 2), self.desktop_color),  # Колір для десктопу
-            ("TEXTCOLOR", (1, 2), (1, 2), self.desktop_color),  # Колір для смуги десктопу
-            ("TEXTCOLOR", (2, 2), (2, 2), self.desktop_color),  # Колір для відсотка десктопу
-            
-            # Межі
-            ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
-            ("BOX", (0, 0), (-1, -1), 0.5, colors.black),
-            
-            # Відступи
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
-            ("TOPPADDING", (0, 0), (-1, 0), 10),
-            ("LEFTPADDING", (1, 1), (1, -1), 10),  # Більший відступ зліва для смуг
-        ]
-        
-        # Додаємо фонові кольори залежно від оцінки
-        # Для мобільного
-        if mobile_score >= 90:
-            table_style.append(("BACKGROUND", (0, 1), (0, 1), self.good_bg_color))
-        elif mobile_score >= 50:
-            table_style.append(("BACKGROUND", (0, 1), (0, 1), self.average_bg_color))
-        else:
-            table_style.append(("BACKGROUND", (0, 1), (0, 1), self.poor_bg_color))
-            
-        # Для десктопу
-        if desktop_score >= 90:
-            table_style.append(("BACKGROUND", (0, 2), (0, 2), self.good_bg_color))
-        elif desktop_score >= 50:
-            table_style.append(("BACKGROUND", (0, 2), (0, 2), self.average_bg_color))
-        else:
-            table_style.append(("BACKGROUND", (0, 2), (0, 2), self.poor_bg_color))
-        
-        chart_table.setStyle(TableStyle(table_style))
-        elements.append(chart_table)
-        elements.append(Spacer(1, 0.5*cm))
-
     def _add_metrics_section(self, elements, title, metrics, width):
         """
         Додає секцію з детальними метриками з кольоровим кодуванням.
@@ -449,109 +348,159 @@ class PDFReportGenerator:
         elements.append(metrics_table)
         elements.append(Spacer(1, 0.7*cm))
     
-    def _add_recommendations_section(self, elements, mobile_recs, desktop_recs):
+    def _add_prioritized_recommendations_section(self, elements, recommendations_data, width):
         """
-        Додає секцію з категоризованими та пріоритизованими рекомендаціями.
-        
+        Додає секцію з пріоритезованими та категоризованими рекомендаціями.
+
         Args:
-            elements (list): Список елементів PDF
-            mobile_recs (list): Рекомендації для мобільних пристроїв
-            desktop_recs (list): Рекомендації для десктопу
+            elements (list): Список елементів PDF.
+            recommendations_data (dict): Структурований словник з рекомендаціями.
+            width (float): Ширина документа.
         """
-        # Об'єднуємо унікальні рекомендації з обох аналізів
-        all_recommendations = list(set(mobile_recs + desktop_recs))
-        
-        if not all_recommendations:
-            return
-            
-        elements.append(Paragraph("Рекомендації щодо оптимізації", self.heading_style))
+        elements.append(Paragraph("Пріоритезовані Рекомендації", self.heading_style))
         elements.append(Spacer(1, 0.3*cm))
-        
-        # Додаємо короткий опис
+
         elements.append(Paragraph(
-            "Нижче наведені рекомендації для покращення продуктивності сайту. "
-            "Виконання цих рекомендацій може значно підвищити швидкість завантаження.",
+            "Нижче наведено список рекомендацій, відсортованих за пріоритетом (найвищий спочатку) та згрупованих за категоріями. "
+            "Пріоритет враховує потенційний вплив на швидкість та орієнтовну складність впровадження.",
             self.normal_style
         ))
         elements.append(Spacer(1, 0.5*cm))
-        
-        # Ключові слова для визначення категорій та пріоритетів
-        high_priority_keywords = [
-            'великого контенту', 'LCP', 'FCP', 'Time to Interactive', 
-            'блокують відображення', 'First Contentful Paint', 
-            'Largest Contentful Paint', 'критично'
+
+        # Add summary table
+        summary = recommendations_data.get("summary", {})
+        if summary:
+            self._add_recommendations_summary(elements, summary, width)
+
+        # Iterate through categories and their recommendations
+        categories = recommendations_data.get("categories", {})
+        sorted_categories = sorted(categories.items())
+
+        for category_name_uk, recs_in_category in sorted_categories:
+            if not recs_in_category:
+                continue
+
+            elements.append(Paragraph(category_name_uk, self.subheading_style))
+            elements.append(Spacer(1, 0.2*cm))
+
+            # Prepare data for the table within this category
+            table_data = [[
+                Paragraph("Рекомендація", self.small_style),
+                Paragraph(PRIORITIZATION_TERMS_UK["impact_label"], self.small_style),
+                Paragraph(PRIORITIZATION_TERMS_UK["difficulty_label"], self.small_style),
+                Paragraph(PRIORITIZATION_TERMS_UK["savings_label"], self.small_style)
+            ]]
+
+            font_name = "Ukrainian" if self.use_ukrainian_font else "Helvetica"
+
+            for rec in recs_in_category:
+                savings_text = f"{rec['potential_savings_ms']} мс" if rec['potential_savings_ms'] is not None else "-"
+                title_paragraph = Paragraph(rec['title'], self.small_style)
+
+                table_data.append([
+                    title_paragraph,
+                    Paragraph(rec['impact_level_uk'], self.small_style),
+                    Paragraph(rec['difficulty_level_uk'], self.small_style),
+                    Paragraph(savings_text, self.small_style)
+                ])
+
+            col_widths = [width * 0.55, width * 0.15, width * 0.15, width * 0.15]
+            category_table = Table(table_data, colWidths=col_widths)
+
+            style = TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), self.header_bg_color),
+                ('TEXTCOLOR', (0, 0), (-1, 0), self.header_text_color),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), font_name),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                ('TOPPADDING', (0, 0), (-1, 0), 4),
+
+                ('FONTNAME', (0, 1), (-1, -1), font_name),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('BOX', (0, 0), (-1, -1), 1, colors.black),
+            ])
+
+            for i, rec in enumerate(recs_in_category, 1):
+                if rec['impact_level'] == 'high':
+                    style.add('BACKGROUND', (1, i), (1, i), self.poor_bg_color)
+                    style.add('TEXTCOLOR', (1, i), (1, i), self.poor_text_color)
+                elif rec['impact_level'] == 'medium':
+                    style.add('BACKGROUND', (1, i), (1, i), self.average_bg_color)
+                    style.add('TEXTCOLOR', (1, i), (1, i), self.average_text_color)
+                else:
+                    style.add('BACKGROUND', (1, i), (1, i), self.good_bg_color)
+                    style.add('TEXTCOLOR', (1, i), (1, i), self.good_text_color)
+
+                if rec['difficulty_level'] == 'hard':
+                    style.add('BACKGROUND', (2, i), (2, i), self.poor_bg_color)
+                    style.add('TEXTCOLOR', (2, i), (2, i), self.poor_text_color)
+                elif rec['difficulty_level'] == 'medium':
+                    style.add('BACKGROUND', (2, i), (2, i), self.average_bg_color)
+                    style.add('TEXTCOLOR', (2, i), (2, i), self.average_text_color)
+                else:
+                    style.add('BACKGROUND', (2, i), (2, i), self.good_bg_color)
+                    style.add('TEXTCOLOR', (2, i), (2, i), self.good_text_color)
+
+            category_table.setStyle(style)
+            elements.append(category_table)
+            elements.append(Spacer(1, 0.5*cm))
+
+    def _add_recommendations_summary(self, elements, summary, width):
+        """Adds a small summary table for recommendations."""
+        elements.append(Paragraph("Загальна статистика рекомендацій:", self.subheading_style))
+        elements.append(Spacer(1, 0.2*cm))
+
+        impact_h = summary.get("impact_counts", {}).get("high", 0)
+        impact_m = summary.get("impact_counts", {}).get("medium", 0)
+        impact_l = summary.get("impact_counts", {}).get("low", 0)
+        diff_e = summary.get("difficulty_counts", {}).get("easy", 0)
+        diff_m = summary.get("difficulty_counts", {}).get("medium", 0)
+        diff_h = summary.get("difficulty_counts", {}).get("hard", 0)
+        total = summary.get("total", 0)
+
+        data = [
+            ["Критерій", "Кількість"],
+            [f"{PRIORITIZATION_TERMS_UK['impact_label']} ({PRIORITIZATION_TERMS_UK['impact']['high']})", str(impact_h)],
+            [f"{PRIORITIZATION_TERMS_UK['impact_label']} ({PRIORITIZATION_TERMS_UK['impact']['medium']})", str(impact_m)],
+            [f"{PRIORITIZATION_TERMS_UK['impact_label']} ({PRIORITIZATION_TERMS_UK['impact']['low']})", str(impact_l)],
+            ["-", "-"],
+            [f"{PRIORITIZATION_TERMS_UK['difficulty_label']} ({PRIORITIZATION_TERMS_UK['difficulty']['easy']})", str(diff_e)],
+            [f"{PRIORITIZATION_TERMS_UK['difficulty_label']} ({PRIORITIZATION_TERMS_UK['difficulty']['medium']})", str(diff_m)],
+            [f"{PRIORITIZATION_TERMS_UK['difficulty_label']} ({PRIORITIZATION_TERMS_UK['difficulty']['hard']})", str(diff_h)],
+            ["-", "-"],
+            ["Всього рекомендацій", str(total)]
         ]
-        
-        # Категоризація та пріоритизація рекомендацій
-        image_recs_high = []
-        image_recs_normal = []
-        code_recs_high = []
-        code_recs_normal = []
-        perf_recs_high = []
-        perf_recs_normal = []
-        other_recs = []
-        
-        for rec in all_recommendations:
-            rec_lower = rec.lower()
-            is_high_priority = any(kw.lower() in rec_lower for kw in high_priority_keywords)
-            
-            if any(kw in rec_lower for kw in ['зображен', 'картин', 'формат', 'picture']):
-                if is_high_priority:
-                    image_recs_high.append(rec)
-                else:
-                    image_recs_normal.append(rec)
-            elif any(kw in rec_lower for kw in ['css', 'javascript', 'js', 'код', 'script']):
-                if is_high_priority:
-                    code_recs_high.append(rec)
-                else:
-                    code_recs_normal.append(rec)
-            elif any(kw in rec_lower for kw in ['швидкість', 'кеш', 'час', 'завантаження']):
-                if is_high_priority:
-                    perf_recs_high.append(rec)
-                else:
-                    perf_recs_normal.append(rec)
-            else:
-                other_recs.append(rec)
-        
-        # Додавання рекомендацій по категоріях
-        self._add_recommendation_category(elements, "Оптимізація зображень:", image_recs_high, image_recs_normal)
-        self._add_recommendation_category(elements, "Оптимізація коду:", code_recs_high, code_recs_normal)
-        self._add_recommendation_category(elements, "Загальна продуктивність:", perf_recs_high, perf_recs_normal)
-        
-        # Додавання інших рекомендацій
-        if other_recs:
-            elements.append(Paragraph("Інші рекомендації:", self.subheading_style))
-            for rec in other_recs:
-                elements.append(Paragraph(f"• {rec}", self.normal_style))
-                
-        # Додавання пояснення пріоритетів - використовуємо текстові символи замість емодзі
+
+        font_name = "Ukrainian" if self.use_ukrainian_font else "Helvetica"
+        bold_font_name = font_name
+
+        summary_table = Table(data, colWidths=[width * 0.7, width * 0.3])
+
+        style = TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), font_name),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('FONTNAME', (0, 0), (-1, 0), bold_font_name),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('LINEABOVE', (0, 4), (-1, 4), 0.5, colors.white),
+            ('LINEBELOW', (0, 4), (-1, 4), 0.5, colors.white),
+            ('LINEABOVE', (0, 8), (-1, 8), 0.5, colors.white),
+            ('LINEBELOW', (0, 8), (-1, 8), 0.5, colors.white),
+            ('TEXTCOLOR', (0, 4), (-1, 4), colors.white),
+            ('TEXTCOLOR', (0, 8), (-1, 8), colors.white),
+            ('FONTNAME', (0, 9), (1, 9), bold_font_name),
+        ])
+        summary_table.setStyle(style)
+
+        elements.append(summary_table)
         elements.append(Spacer(1, 0.7*cm))
-        elements.append(Paragraph("Пріоритети рекомендацій:", self.subheading_style))
-        elements.append(Paragraph("[!!!] Високий пріоритет - критичні проблеми, що значно впливають на швидкість", self.small_style))
-        elements.append(Paragraph("[!] Середній пріоритет - важливі оптимізації з помірним впливом", self.small_style))
-        elements.append(Paragraph("• Низький пріоритет - незначні покращення", self.small_style))
-    
-    def _add_recommendation_category(self, elements, title, high_priority_items, normal_priority_items):
-        """
-        Додає категорію рекомендацій з відповідними пріоритетами.
-        
-        Args:
-            elements (list): Список елементів PDF
-            title (str): Заголовок категорії
-            high_priority_items (list): Рекомендації з високим пріоритетом
-            normal_priority_items (list): Рекомендації з середнім пріоритетом
-        """
-        if not high_priority_items and not normal_priority_items:
-            return
-            
-        elements.append(Paragraph(title, self.subheading_style))
-        
-        # Додавання рекомендацій з високим пріоритетом
-        for rec in high_priority_items:
-            elements.append(Paragraph(f"[!!!] {rec}", self.normal_style))
-            
-        # Додавання рекомендацій з середнім пріоритетом
-        for rec in normal_priority_items:
-            elements.append(Paragraph(f"[!] {rec}", self.normal_style))
-            
-        elements.append(Spacer(1, 0.3*cm))

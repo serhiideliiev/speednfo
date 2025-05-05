@@ -39,14 +39,27 @@ if not PAGESPEED_API_KEY:
 
 PAGESPEED_API_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
 
-# Шлях до українського шрифту для PDF
-DEFAULT_FONT_PATH = str(BASE_DIR / "fonts" / "ukrainian_font.ttf")
+# Шлях до українського шрифту для PDF та візуалізацій
+DEFAULT_FONT_PATH = str(BASE_DIR / "fonts" / "Roboto-VariableFont_wdth,wght.ttf") # Correct path to Roboto
 FONT_PATH = os.environ.get("PDF_FONT_PATH", DEFAULT_FONT_PATH)
 
 # Перевірка наявності шрифту
 if not Path(FONT_PATH).exists():
-    logger.warning(f"Font file not found at {FONT_PATH}, will use fallback font")
-    FONT_PATH = None
+    logger.warning(f"Font file not found at {FONT_PATH}, visualizations might not use the correct font.")
+    FONT_NAME = None # Indicate font is not available
+else:
+    # Extract font name for Matplotlib registration if needed
+    try:
+        from matplotlib.font_manager import FontProperties
+        font_prop = FontProperties(fname=FONT_PATH)
+        FONT_NAME = font_prop.get_name() # Get the actual font name
+        logger.info(f"Using font: {FONT_NAME} from {FONT_PATH}")
+    except ImportError:
+        logger.warning("Matplotlib not installed, cannot determine font name.")
+        FONT_NAME = "Roboto" # Assume name if matplotlib isn't available here
+    except Exception as e:
+        logger.warning(f"Could not determine font name from {FONT_PATH}: {e}. Using fallback name 'Roboto'.")
+        FONT_NAME = "Roboto" # Fallback name
 
 # Налаштування PDF
 PDF_AUTHOR = "PageSpeed Telegram Bot"
@@ -131,7 +144,22 @@ BOT_MESSAGES = {
     "schedule_cancel_success": "✅ Автоматичний звіт для {url} скасовано.",
     "schedule_cancel_error": "❌ Помилка при скасуванні звіту: {error}",
     "schedule_cancel_not_found": "❌ Запланований звіт не знайдено.",
-    "scheduled_error": "❌ Помилка під час планового аналізу для {url}: {error}" # Error message sent by the scheduled job
+    "scheduled_error": "❌ Помилка під час планового аналізу для {url}: {error}", # Error message sent by the scheduled job
+    # --- New messages for compare feature ---
+    "compare_usage": (
+        "⚠️ Неправильне використання команди. Формат: /compare <ваш_URL> <URL_конкурента_1> [URL_конкурента_2] [URL_конкурента_3]\n\n"
+        "Приклад: /compare https://my-site.com https://competitor1.com https://competitor2.com"
+    ),
+    "compare_start": "🔍 Починаю порівняльний аналіз URL...",
+    "compare_error": "❌ Сталася помилка під час порівняльного аналізу: {error}",
+    "compare_partial_error": "⚠️ Деякі URL не вдалося проаналізувати. Результати можуть бути неповними.",
+    "compare_complete": "📊 Порівняльний аналіз завершено.",
+    "compare_result_header": "📊 *Результати порівняльного аналізу PageSpeed*\n",
+    "compare_site_header": "\n*{rank}. {url}*",
+    "compare_score": "  Загальна оцінка: {score}/100 {emoji}",
+    "compare_metric": "  {metric_name}: {value} ({rating})",
+    "compare_no_data": "  (Немає даних)",
+    "compare_rank_note": "\n_(Ранжування базується лише на наданих URL)_"
 }
 
 # Ключові метрики для включення до звіту

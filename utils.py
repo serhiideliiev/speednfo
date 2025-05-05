@@ -8,7 +8,7 @@
 import re
 from urllib.parse import urlparse
 from datetime import datetime
-from config import PERFORMANCE_RATINGS, logger
+from config import PERFORMANCE_RATINGS, logger, KEY_METRICS
 
 
 def is_valid_url(url):
@@ -165,6 +165,34 @@ def get_score_emoji(score):
     
     # За замовчуванням - найгірший рейтинг
     return PERFORMANCE_RATINGS["poor"]["emoji"]
+
+
+def get_score_rating_tuple(score):
+    """
+    Повертає кортеж (статус, емодзі) на основі оцінки продуктивності.
+
+    Args:
+        score (int): Оцінка продуктивності (0-100)
+
+    Returns:
+        tuple: (str, str) - Опис статусу та емодзі
+    """
+    try:
+        score = int(score)
+    except (ValueError, TypeError):
+        logger.warning(f"Неправильний формат оцінки: {score}, використовую 0")
+        score = 0
+
+    for rating, data in sorted(
+        PERFORMANCE_RATINGS.items(),
+        key=lambda x: x[1]["min"],
+        reverse=True
+    ):
+        if score >= data["min"]:
+            return data["status"], data["emoji"]
+
+    # За замовчуванням - найгірший рейтинг
+    return PERFORMANCE_RATINGS["poor"]["status"], PERFORMANCE_RATINGS["poor"]["emoji"]
 
 
 def format_metric_rating(metric_data):
