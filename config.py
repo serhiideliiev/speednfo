@@ -113,7 +113,7 @@ BOT_MESSAGES = {
         "- Google PageSpeed Insights API\n"
         "- ReportLab"
     ),
-    "analysis_start": (
+    "analysis_started": (
         "🔍 Починаю аналіз URL...\n"
         "Це може зайняти кілька хвилин. Будь ласка, зачекайте."
     ),
