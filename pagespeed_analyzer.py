@@ -194,7 +194,29 @@ class PageSpeedAnalyzer:
         except Exception as e:
             logger.error(f"Невідома помилка: {e}", exc_info=True)
             return {"error": f"Невідома помилка: {str(e)}"}
-    
+
+    def _get_metric_rating(self, metric):
+        """
+        Визначає рейтинг метрики ('good', 'average', 'poor') на основі її оцінки.
+
+        Args:
+            metric (dict): Словник метрики з результату Lighthouse.
+
+        Returns:
+            str: Рейтинг метрики ('good', 'average', 'poor').
+        """
+        score = metric.get("score")
+        if score is None:
+            return "N/A"  # Або інше значення за замовчуванням
+
+        # Стандартні пороги Lighthouse (0.9+ = good, 0.5-0.89 = average, <0.5 = poor)
+        if score >= 0.9:
+            return "good"
+        elif score >= 0.5:
+            return "average"
+        else:
+            return "poor"
+
     def _prioritize_and_categorize_recommendations(self, audits):
         """
         Пріоритезує та категоризує рекомендації з аудитів Lighthouse.
