@@ -182,7 +182,7 @@ class PDFReportGenerator:
             )
         
         # Додавання візуальної діаграми порівняння продуктивності
-        self._add_performance_chart(elements, mobile_results, desktop_results, doc.width)
+        # self._add_performance_chart(elements, mobile_results, desktop_results, doc.width) # Removed as requested
         
         # Додавання рекомендацій
         if mobile_results and desktop_results:
@@ -300,17 +300,20 @@ class PDFReportGenerator:
         desktop_score = desktop_results.get("score", 0) if desktop_results else 0
         
         # Функція для створення візуальної смуги з Unicode-символів
-        def create_bar(score, max_length=20):
-            bar_length = int(round(score / 100 * max_length))
+        def create_bar(score, points_per_symbol=25):
+            # Calculate number of symbols based on new scale
+            bar_length = int(round(score / points_per_symbol)) 
             # Переконуємося, що завжди є хоча б один символ, якщо score > 0
             if score > 0 and bar_length == 0:
                 bar_length = 1
-            return "█" * bar_length
+            # Use a bullet symbol
+            return "•" * bar_length
         
         # Створюємо структуровану таблицю для відображення діаграми
         # Три стовпці: пристрій і оцінка | візуальна смуга | відсоток
         data = [
-            ["Платформа", "Візуалізація (кожен █ = 5 балів)", ""],
+            # Update the header text to reflect the new scale
+            ["Платформа", "Візуалізація (кожен • = 25 балів)", ""], 
             [f"Мобільний ({mobile_score}/100)", create_bar(mobile_score), f"{mobile_score}%"],
             [f"Десктоп ({desktop_score}/100)", create_bar(desktop_score), f"{desktop_score}%"]
         ]
@@ -319,7 +322,8 @@ class PDFReportGenerator:
         chart_table = Table(data, colWidths=[width*0.3, width*0.6, width*0.1])
         
         # Стилізація таблиці
-        font_name = "Helvetica"  # Використовуємо стандартний шрифт для надійності
+        # Use the registered font (Ukrainian if available, otherwise Helvetica)
+        font_name = "Ukrainian" if self.use_ukrainian_font else "Helvetica"
         table_style = [
             # Стиль заголовка
             ("BACKGROUND", (0, 0), (-1, 0), self.header_bg_color),
@@ -327,15 +331,19 @@ class PDFReportGenerator:
             ("ALIGN", (0, 0), (-1, 0), "CENTER"),
             ("FONTNAME", (0, 0), (-1, 0), font_name),
             ("FONTSIZE", (0, 0), (-1, 0), 12),
-            ("SPAN", (0, 0), (0, 0)),  # Об'єднуємо клітинки в заголовку
-            ("SPAN", (1, 0), (2, 0)),  # Об'єднуємо клітинки в заголовку
+            # Adjust span for the updated header text
+            ("SPAN", (1, 0), (2, 0)),  # Span the visualization header over the bar and percentage columns
             
             # Стиль даних
             ("ALIGN", (0, 1), (0, -1), "LEFT"),   # Пристрій вирівнюємо зліва
             ("ALIGN", (1, 1), (1, -1), "LEFT"),   # Смугу вирівнюємо зліва
             ("ALIGN", (2, 1), (2, -1), "RIGHT"),  # Відсоток вирівнюємо справа
             ("FONTNAME", (0, 1), (-1, -1), font_name),
-            ("FONTSIZE", (1, 1), (1, -1), 14),  # Більший розмір для символів смуги
+            # Increase font size for the bullet symbols (column 1, rows 1 and 2)
+            ("FONTSIZE", (1, 1), (1, -1), 18),  # Increased size for bullets
+            # Keep other text size normal
+            ("FONTSIZE", (0, 1), (0, -1), 12), 
+            ("FONTSIZE", (2, 1), (2, -1), 12), 
             
             # Колір тексту для мобільної і десктопної версій
             ("TEXTCOLOR", (0, 1), (0, 1), self.mobile_color),  # Колір для мобільного

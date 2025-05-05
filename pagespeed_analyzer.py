@@ -12,6 +12,9 @@ import json
 import colorsys
 from bs4 import BeautifulSoup
 from http.cookies import SimpleCookie
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from config import PAGESPEED_API_KEY, PAGESPEED_API_URL, KEY_METRICS, logger
 
@@ -39,6 +42,18 @@ class PageSpeedAnalyzer:
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
+        
+        # Configure retries for transient errors (timeouts, 5xx)
+        retry_strategy = Retry(
+            total=3,  # Total number of retries
+            backoff_factor=1,  # Exponential backoff factor (e.g., 1s, 2s, 4s)
+            status_forcelist=[500, 502, 503, 504],  # Retry on these server errors
+            allowed_methods=["GET"]  # Only retry GET requests
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
     
     def analyze(self, url, strategy="mobile"):
         """
@@ -72,7 +87,7 @@ class PageSpeedAnalyzer:
                 self.api_url,
                 params=params,
                 headers=self.headers,
-                timeout=60  # Збільшений таймаут для великих сторінок
+                timeout=120  # Збільшений таймаут для великих сторінок
             )
             response.raise_for_status()
             
