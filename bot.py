@@ -11,6 +11,11 @@ matplotlib.use('Agg') # Use Agg backend for non-interactive plotting
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
+import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import socketserver
+
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
@@ -47,6 +52,29 @@ else:
 
 # Define states for ConversationHandler
 ASK_URL, ASK_FREQUENCY = range(2)
+
+# Health Check Server for Koyeb
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_response(404)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"Not Found")
+
+def start_health_server():
+    port = int(os.environ.get("PORT", 8000))
+    try:
+        with socketserver.TCPServer(("", port), HealthCheckHandler) as httpd:
+            logger.info(f"Health check server listening on port {port}")
+            httpd.serve_forever()
+    except Exception as e:
+        logger.error(f"Could not start health check server on port {port}: {e}", exc_info=True)
 
 class PageSpeedBot:
     """
@@ -116,6 +144,10 @@ class PageSpeedBot:
 
     def run(self):
         """Запускає бота та планувальник."""
+        # Start health check server in a new thread for Koyeb
+        health_thread = threading.Thread(target=start_health_server, daemon=True)
+        health_thread.start()
+
         # Створення додатку
         self.application = Application.builder().token(self.token).build() # Store application instance
 
@@ -495,9 +527,13 @@ class PageSpeedBot:
         # Optionally, notify the user about the error
         if isinstance(update, Update) and update.effective_chat:
             try:
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=BOT_MESSAGES.get("generic_error", "Виникла внутрішня помилка. Будь ласка, спробуйте пізніше.")
-                )
+                # Ensure context.bot is available and valid
+                if hasattr(context, 'bot') and context.bot:
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=BOT_MESSAGES.get("generic_error", "Виникла внутрішня помилка. Будь ласка, спробуйте пізніше.")
+                    )
+                else:
+                    logger.warning("context.bot is not available in error_handler, cannot send message to user.")
             except Exception as e:
                 logger.error(f"Failed to send error message to chat {update.effective_chat.id}: {e}")
