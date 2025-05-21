@@ -1,8 +1,11 @@
 name: Sync GitHub Issue to Jira
 
 on:
-  issues:
-    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue-number:
+        description: 'GitHub Issue Number'
+        required: true
 
 jobs:
   sync-to-jira:
@@ -15,3 +18,4 @@ jobs:
           jira-user: ${{ secrets.JIRA_USERNAME }}
           jira-api-token: ${{ secrets.JIRA_TOKEN }}
           jira-project: KANBAN
+          github-issue-number: ${{ github.event.inputs.issue-number }}
