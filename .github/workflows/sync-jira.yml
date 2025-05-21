@@ -1,0 +1,26 @@
+name: 🔷 Sync to Jira
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to be performed'
+        required: true
+        default: 'mirror-issues'
+      issue-numbers:
+        description: 'Issue numbers to sync (comma-separated)'
+        required: true
+
+jobs:
+  sync-to-jira:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync to Jira
+        uses: espressif/sync-jira-actions@v1
+        with:
+          jira_url: ${{ secrets.JIRA_URL }}
+          jira_user: ${{ secrets.JIRA_USERNAME }}
+          jira_token: ${{ secrets.JIRA_TOKEN }}
+          jira_project: KANBAN
+          action: ${{ github.event.inputs.action }}
+          issue_numbers: ${{ github.event.inputs.issue-numbers }}
