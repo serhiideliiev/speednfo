@@ -1,0 +1,17 @@
+name: Sync GitHub Issue to Jira
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  sync-to-jira:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync GitHub Issue to Jira
+        uses: ankitpokhrel/github-issue-sync-2-jira@v1
+        with:
+          jira-url: ${{ secrets.JIRA_URL }}
+          jira-user: ${{ secrets.JIRA_USERNAME }}
+          jira-api-token: ${{ secrets.JIRA_TOKEN }}
+          jira-project: KANBAN
