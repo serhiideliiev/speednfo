@@ -1,11 +1,10 @@
 name: Jira Sync
 
 on:
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: 'GitHub Issue Number'
-        required: true
+  issues:
+    types: [opened, edited, labeled, unlabeled]
+  issue_comment:
+    types: [created]
 
 jobs:
   sync:
