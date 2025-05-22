@@ -1,0 +1,23 @@
+name: Jira Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'GitHub Issue Number'
+        required: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync Github Issues to Jira
+        uses: jordansilva/github-action-issue-to-jira@v1.1.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_HOST: ${{ secrets.JIRA_HOST }}
+          JIRA_USERNAME: ${{ secrets.JIRA_USERNAME }}
+          JIRA_PASSWORD: ${{ secrets.JIRA_PASSWORD }}
+        with:
+          project: KANBAN
+          issue: ${{ github.event.inputs.issue_number }}
