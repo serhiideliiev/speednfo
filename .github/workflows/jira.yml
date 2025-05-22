@@ -9,15 +9,16 @@ on:
 
 jobs:
   sync:
+    name: Sync Items
     runs-on: ubuntu-latest
     steps:
       - name: Sync Github Issues to Jira
         uses: jordansilva/github-action-issue-to-jira@v1.1.2
+        with:
+          jiraHost: ${{ secrets.JIRA_HOST }}
+          jiraUsername: ${{ secrets.JIRA_USERNAME }}
+          jiraPassword: ${{ secrets.JIRA_PASSWORD }}
+          project: KANBAN
+          assignee: ""
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JIRA_HOST: ${{ secrets.JIRA_HOST }}
-          JIRA_USERNAME: ${{ secrets.JIRA_USERNAME }}
-          JIRA_PASSWORD: ${{ secrets.JIRA_PASSWORD }}
-        with:
-          project: KANBAN
-          issue: ${{ github.event.inputs.issue_number }}
