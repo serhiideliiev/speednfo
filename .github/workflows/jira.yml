@@ -1,23 +1,20 @@
-name: Jira Sync
+name: Issue to Jira
 
 on:
   issues:
-    types: [opened, edited, labeled, unlabeled]
-  issue_comment:
-    types: [created]
+    types: [opened, edited]
 
 jobs:
-  sync:
-    name: Sync Items
+  create-jira-issue:
     runs-on: ubuntu-latest
     steps:
-      - name: Sync Github Issues to Jira
-        uses: jordansilva/github-action-issue-to-jira@v1.1.2
+      - name: Create Jira Issue
+        uses: mheap/github-action-issue-to-jira@v2
         with:
-          jiraHost: ${{ secrets.JIRA_HOST }}
-          jiraUsername: ${{ secrets.JIRA_USERNAME }}
-          jiraPassword: ${{ secrets.JIRA_PASSWORD }}
-          project: KANBAN
-          assignee: ""
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          jira-base-url: ${{ secrets.JIRA_BASE_URL }}
+          jira-user-email: ${{ secrets.JIRA_USER_EMAIL }}
+          jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
+          jira-project: KANBAN
+          jira-issue-type: Task
+          github-issue-title: ${{ github.event.issue.title }}
+          github-issue-body: ${{ github.event.issue.body }}
